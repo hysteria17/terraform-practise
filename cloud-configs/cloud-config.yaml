@@ -1,0 +1,29 @@
+#cloud-config
+users:
+  - name: ${user_name}
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ${ssh_key}
+
+package_update: true
+packages:
+  - nginx
+
+write_files:
+  - content: |
+      <!DOCTYPE html>
+      <html>
+      <head><title>Terraform Demo</title></head>
+      <body>
+        <h1>Hello from ${server_name}!</h1>
+        <p>This server was provisioned via Terraform user_data.</p>
+      </body>
+      </html>
+    path: /var/www/html/index.html
+    permissions: '0644'
+
+runcmd:
+  - systemctl enable nginx
+  - systemctl restart nginx

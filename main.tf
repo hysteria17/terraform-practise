@@ -84,6 +84,8 @@ data "yandex_vpc_subnet" "existing_subnet" {
   # network_id = data.yandex_vpc_network.existing_net.id
 }
 
+# External modules
+
 module "vpc_dev" {
   source  = "terraform-yacloud-modules/vpc/yandex"
   version = "3.6.0"
@@ -103,4 +105,57 @@ module "git_example" {
   # 2. URL: github.com/...
   # 3. Ref: ?ref=v3.2.4 (Жесткая фиксация версии!)
   source = "git::https://github.com/hashicorp/terraform-provider-null.git?ref=v3.2.4"
+}
+
+resource "yandex_compute_instance" "vm" {
+  name = "web-server-01"
+  platform_id = "standard-v1"
+  zone = "ru-central1-a"
+
+  resources {
+    cores  = 2
+    memory = 2
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu_latest.id
+    }
+  }
+
+  network_interface {
+    subnet_id = data.yandex_vpc_subnet.existing_subnet.id
+    nat       = true
+  }
+  
+  scheduling_policy {
+    preemptible = true
+  }
+
+  # Самая важная часть:
+  metadata = {
+    user-data = templatefile("${path.module}/cloud-configs/cloud-config.yaml", {
+      user_name   = "ubuntu"
+      ssh_key     = file("~/.ssh/id_rsa.pub")
+      server_name = "My Awesome Web Server"
+    })
+  }
+}
+
+# 4. Null Resource для логирования IP
+resource "null_resource" "logger" {
+  # Самое важное: triggers
+  # Этот ресурс будет пересоздан ТОЛЬКО если изменится ID инстанса
+  triggers = {
+    instance_id = yandex_compute_instance.vm.id
+  }
+
+  # Provisioner выполняется локально
+  provisioner "local-exec" {
+    command = "echo 'New instance created. ID: ${yandex_compute_instance.vm.id}, IP: ${yandex_compute_instance.vm.network_interface.0.nat_ip_address}' >> ips.txt"
+  }
+}
+
+output "external_ip" {
+  value = yandex_compute_instance.vm.network_interface.0.nat_ip_address
 }
